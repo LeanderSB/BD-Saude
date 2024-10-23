@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BD Saúde - Controle de Vendas</title>
+    <style>
+        :root {
+            --verde-principal: #4CAF50;
+            --azul-escuro: #003366;
+            --cinza-claro: #f9f9f9;
+            --cinza-escuro: #333;
+            --branco: #fff;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: var(--cinza-claro);
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--azul-escuro);
+            padding: 20px;
+            background-color: var(--verde-principal);
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        form {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: var(--branco);
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        form label {
+            font-size: 1.1rem;
+            color: var(--azul-escuro);
+        }
+
+        form input, form select {
+            margin-top: 5px;
+            margin-bottom: 15px;
+            padding: 10px;
+            width: calc(100% - 20px);
+            border: 1px solid var(--azul-escuro);
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        form button {
+            padding: 10px 20px;
+            background-color: var(--verde-principal);
+            color: var(--branco);
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        form button:hover {
+            background-color: #45a049;
+        }
+
+        table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+            background-color: var(--branco);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        table, th, td {
+            border: 1px solid var(--azul-escuro);
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--azul-escuro);
+            color: var (--branco);
+            font-size: 1.1rem;
+        }
+
+        td {
+            font-size: 1rem;
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--cinza-claro);
+        }
+
+        tr:hover {
+            background-color: #d0e6d2;
+        }
+
+        #chartContainer {
+            width: 80%;
+            margin: 40px auto;
+        }
+
+        #totalVendasContainer {
+            text-align: center;
+            margin: 20px auto;
+            font-size: 1.5rem;
+            color: var(--azul-escuro);
+        }
+    </style>
+</head>
+<body>
+    <h1>Controle de Vendas BD Saúde</h1>
+
+    <!-- Formulário para entrada de dados -->
+    <form id="salesForm">
+        <label for="vendedor">Vendedor:</label>
+        <input type="text" id="vendedor" required />
+
+        <label for="unidade">Unidade:</label>
+        <input type="text" id="unidade" required />
+
+        <label for="totalVendas">Total de Vendas (R$):</label>
+        <input type="number" id="totalVendas" step="0.01" required />
+
+        <label for="meta">Meta de Vendas (R$):</label>
+        <input type="number" id="meta" step="0.01" required />
+
+        <button type="submit">Adicionar Vendas</button>
+    </form>
+
+    <!-- Tabela para exibir os dados -->
+    <table id="salesTable">
+        <thead>
+            <tr>
+                <th>Vendedor</th>
+                <th>Unidade</th>
+                <th>Total de Vendas (R$)</th>
+                <th>Meta de Vendas (R$)</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <!-- Container para exibir o total de vendas em quantidade -->
+    <div id="totalVendasContainer">
+        <h2>Total de Vendedores</h2>
+        <span id="totalVendasQuantidade">0</span>
+    </div>
+
+    <!-- Container para os gráficos -->
+    <div id="chartContainer">
+        <h2>Gráfico de Vendas por Vendedor</h2>
+        <canvas id="vendasChart"></canvas>
+
+        <h2>Gráfico Total das Semanas</h2>
+        <canvas id="totalChart"></canvas>
+    </div>
+
+    <!-- Botões para exportação e exclusão -->
+    <div style="text-align: center; margin-top: 20px;">
+        <button id="exportPDF">Exportar em PDF</button>
+        <button id="exportExcel">Exportar em Excel</button>
+        <button id="clearData">Apagar Todos os Dados</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script>
+        // Variáveis globais
+        const salesData = JSON.parse(localStorage.getItem('salesData')) || [];
+
+        const vendedorChart = document.getElementById('vendasChart').getContext('2d');
+        const totalChart = document.getElementById('totalChart').getContext('2d');
+
+        let vendasChartInstance = null;
+        let totalChartInstance = null;
+
+        // Função para adicionar uma nova venda e atualizar a tabela e os gráficos
+        document.getElementById('salesForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const vendedor = document.getElementById('vendedor').value;
+            const unidade = document.getElementById('unidade').value;
+            const totalVendas = parseFloat(document.getElementById('totalVendas').value);
+            const meta = parseFloat(document.getElementById('meta').value);
+
+            // Adiciona os dados no array de vendas
+            salesData.push({ vendedor, unidade, totalVendas, meta });
+            localStorage.setItem('salesData', JSON.stringify(salesData));
+
+            // Limpa o formulário
+            document.getElementById('salesForm').reset();
+
+            // Atualiza a tabela e os gráficos
+            updateTable();
+            updateCharts();
+        });
+
+        // Função para atualizar a tabela de vendas
+        function updateTable() {
+            const tbody = document.querySelector('#salesTable tbody');
+            tbody.innerHTML = '';
+
+            salesData.forEach((sale, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${sale.vendedor}</td>
+                    <td>${sale.unidade}</td>
+                    <td>R$ ${sale.totalVendas.toFixed(2)}</td>
+                    <td>R$ ${sale.meta.toFixed(2)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Função para atualizar os gráficos
+        function updateCharts() {
+            const vendedores = salesData.map(sale => sale.vendedor);
+            const totais = salesData.map(sale => sale.totalVendas);
+            const metas = salesData.map(sale => sale.meta);
+
+            // Atualiza o gráfico de vendas por vendedor
+            if (vendasChartInstance) {
+                vendasChartInstance.destroy();
+            }
+
+            vendasChartInstance = new Chart(vendedorChart, {
+                type: 'bar',
+                data: {
+                    labels: vendedores,
+                    datasets: [{
+                        label: 'Total de Vendas (R$)',
+                        data: totais,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Atualiza o gráfico total das semanas
+            const totalVendas = totais.reduce((acc, curr) => acc + curr, 0);
+            const totalMeta = metas.reduce((acc, curr) => acc + curr, 0);
+
+            if (totalChartInstance) {
+                totalChartInstance.destroy();
+            }
+
+            totalChartInstance = new Chart(totalChart, {
+                type: 'bar',
+                data: {
+                    labels: ['Total Realizado', 'Meta Total'],
+                    datasets: [{
+                        label: 'Valores Totais (R$)',
+                        data: [totalVendas, totalMeta],
+                        backgroundColor: [
+                            'rgba(153, 102, 255, 0.2)',
+                            'rgba(255, 99, 132, 0.2)'
+                        ],
+                        borderColor: [
+                            'rgba(153, 102, 255, 1)',
+                            'rgba(255, 99, 132, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Atualiza o total de vendas (quantidade)
+            document.getElementById('totalVendasQuantidade').innerText = salesData.length;
+        }
+
+        // Função para apagar todos os dados
+        document.getElementById('clearData').addEventListener('click', function() {
+            if (confirm('Tem certeza que deseja apagar todos os dados?')) {
+                localStorage.removeItem('salesData');
+                salesData.length = 0;
+                updateTable();
+                updateCharts();
+            }
+        });
+
+        // Função para exportar os dados para PDF
+        document.getElementById('exportPDF').addEventListener('click', function() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.text('Relatório de Vendas', 10, 10);
+            let y = 20;
+
+            salesData.forEach((sale, index) => {
+                doc.text(`${index + 1}. Vendedor: ${sale.vendedor}, Unidade: ${sale.unidade}, Vendas: R$ ${sale.totalVendas.toFixed(2)}, Meta: R$ ${sale.meta.toFixed(2)}`, 10, y);
+                y += 10;
+            });
+
+            doc.save('relatorio_vendas.pdf');
+        });
+
+        // Inicializa a tabela e os gráficos ao carregar a página
+        updateTable();
+        updateCharts();
+    </script>
+</body>
+</html>
